@@ -1,0 +1,163 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'           # Trigger on version tags: v1.0.0, v1.2.3
+  workflow_dispatch:   # Allow manual trigger from GitHub UI
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'client'
+        type: choice
+        options: [client, server, both]
+
+permissions:
+  contents: write     # Required for creating releases
+
+jobs:
+  # ─── Build Windows Client ──────────────────────────────────────────────────
+  build-windows-client:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build React renderer
+        run: npm run build:renderer
+        env:
+          CI: false  # Don't treat warnings as errors
+          REACT_APP_ENV: production
+
+      - name: Build Windows Client installer
+        run: npm run build:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.WINDOWS_CERT_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+          STORE_ENCRYPTION_KEY: ${{ secrets.STORE_ENCRYPTION_KEY }}
+
+      - name: Upload Windows Client artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-client-installer
+          path: dist/*.exe
+          retention-days: 30
+
+  # ─── Build Windows Server ──────────────────────────────────────────────────
+  build-windows-server:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npm run build:renderer
+        env: { CI: false }
+      - name: Build Windows Server installer
+        run: npm run build:win:server
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.WINDOWS_CERT_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+          INSTALL_TYPE: server
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-server-installer
+          path: dist/*-server-*.exe
+          retention-days: 30
+
+  # ─── Build macOS ───────────────────────────────────────────────────────────
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+
+      # Import Apple code signing certificate
+      - name: Import signing certificate
+        if: ${{ secrets.APPLE_CERT_BASE64 != '' }}
+        env:
+          CERT_BASE64: ${{ secrets.APPLE_CERT_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          echo "$CERT_BASE64" | base64 --decode > certificate.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security import certificate.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+
+      - run: npm run build:renderer
+        env: { CI: false }
+
+      - name: Build macOS installer
+        run: npm run build:mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-installer
+          path: dist/*.dmg
+          retention-days: 30
+
+  # ─── Create GitHub Release ─────────────────────────────────────────────────
+  release:
+    needs: [build-windows-client, build-windows-server, build-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Dental X-Ray Studio ${{ github.ref_name }}
+          draft: true
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
+          files: |
+            release-artifacts/**/*.exe
+            release-artifacts/**/*.dmg
+          body: |
+            ## Dental X-Ray Studio ${{ github.ref_name }}
+
+            ### Downloads
+
+            | Platform | Type | Download |
+            |----------|------|----------|
+            | Windows  | Client | `DentalXRayStudio-Setup-${{ github.ref_name }}.exe` |
+            | Windows  | Server | `DentalXRayStudio-Server-Setup-${{ github.ref_name }}.exe` |
+            | macOS    | Universal | `DentalXRayStudio-${{ github.ref_name }}.dmg` |
+
+            ### Installation
+            - **Server install**: Run the Server installer first on your server machine. This installs and configures the database.
+            - **Client install**: Run the Client installer on each workstation. Configure the server address during setup.
+
+            ### Changelog
+            <!-- Add changelog here -->
+
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,240 @@
+.viewer-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-base);
+}
+
+/* ── Topbar ─────────────────────────────────────────────────────────────── */
+.viewer-topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  min-height: 46px;
+  flex-shrink: 0;
+}
+.viewer-info {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+.viewer-title {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.viewer-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* ── Body ────────────────────────────────────────────────────────────────── */
+.viewer-body { flex: 1; display: flex; overflow: hidden; }
+
+/* ── Thumbnail strip ─────────────────────────────────────────────────────── */
+.thumbnail-strip {
+  width: 88px;
+  min-width: 88px;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 6px;
+}
+
+.thumbnail {
+  cursor: pointer;
+  border-radius: var(--radius);
+  border: 2px solid transparent;
+  overflow: hidden;
+  transition: border-color 0.1s;
+  flex-shrink: 0;
+}
+.thumbnail:hover  { border-color: var(--border-focus); }
+.thumbnail.active { border-color: var(--accent); }
+
+.thumbnail-preview {
+  aspect-ratio: 1;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.thumbnail-preview img { width: 100%; height: 100%; object-fit: cover; filter: brightness(0.9); }
+.thumbnail-placeholder { font-size: 22px; opacity: 0.3; }
+
+.thumbnail-label {
+  display: block;
+  text-align: center;
+  font-size: 9px;
+  color: var(--text-muted);
+  padding: 2px 2px 1px;
+  text-transform: capitalize;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thumbnail-tooth {
+  display: block;
+  text-align: center;
+  font-size: 9px;
+  color: var(--accent);
+  font-weight: 700;
+  padding-bottom: 3px;
+}
+.thumbnail-empty { padding: 10px 4px; text-align: center; }
+.thumbnail-add {
+  width: 100%;
+  aspect-ratio: 1;
+  background: var(--bg-elevated);
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: 20px;
+  cursor: pointer;
+  transition: all 0.1s;
+  flex-shrink: 0;
+}
+.thumbnail-add:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+/* ── Main viewer canvas ──────────────────────────────────────────────────── */
+.viewer-main {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Cornerstone renders into this element — must fill parent entirely */
+.viewer-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+.viewer-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-secondary);
+}
+
+.viewer-image-loading {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.65);
+  color: rgba(255,255,255,0.8);
+  font-size: 12px;
+  padding: 5px 14px;
+  border-radius: 20px;
+  pointer-events: none;
+  z-index: 20;
+}
+
+/* ── DICOM overlays (clinical standard layout) ───────────────────────────── */
+.overlay-tl,
+.overlay-tr,
+.overlay-bl,
+.overlay-br {
+  position: absolute;
+  font-size: 11px;
+  line-height: 1.65;
+  color: rgba(255,255,255,0.75);
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  pointer-events: none;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+  z-index: 10;
+}
+.overlay-tl { top: 10px;    left: 12px; }
+.overlay-tr { top: 10px;    right: 12px; text-align: right; }
+.overlay-bl { bottom: 10px; left: 12px;  display: flex; gap: 14px; }
+.overlay-br { bottom: 10px; right: 12px; text-align: right; }
+
+/* ── Tool panel ──────────────────────────────────────────────────────────── */
+.tool-panel {
+  width: 72px;
+  min-width: 72px;
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 5px;
+  overflow-y: auto;
+}
+.tool-section-title {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  padding: 4px 4px 2px;
+}
+.tool-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 2px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.1s;
+}
+.tool-btn:hover  { background: var(--bg-elevated); color: var(--text-primary); }
+.tool-btn.active { background: var(--accent-dim); color: var(--accent); border-color: rgba(59,130,246,0.35); }
+.tool-icon  { font-size: 15px; }
+.tool-label { font-size: 9px; font-weight: 500; }
+
+.divider { height: 1px; background: var(--border); margin: 6px 0; }
+
+.wl-presets { display: flex; flex-direction: column; gap: 2px; }
+.preset-btn {
+  padding: 4px 2px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 9px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.1s;
+  text-align: center;
+}
+.preset-btn:hover { background: var(--accent-dim); color: var(--accent); border-color: var(--border-focus); }
+
+.key-hints { display: flex; flex-direction: column; gap: 3px; }
+.key-hint  { display: flex; align-items: center; gap: 5px; font-size: 9px; color: var(--text-muted); }
+kbd {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-family: inherit;
+  font-size: 9px;
+  color: var(--text-secondary);
+  min-width: 16px;
+  text-align: center;
+}

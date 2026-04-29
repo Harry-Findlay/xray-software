@@ -1,0 +1,204 @@
+/* ── Full-screen first-launch shell ────────────────────────────────────── */
+.dbsetup-page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-base);
+  gap: 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.dbsetup-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 20% 60%, rgba(59,130,246,0.07) 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 30%, rgba(34,197,94,0.04) 0%, transparent 45%);
+  pointer-events: none;
+}
+
+.dbsetup-card {
+  width: 480px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 32px 32px 24px;
+  box-shadow: var(--shadow-lg);
+  position: relative;
+  z-index: 1;
+  transition: width 0.2s ease;
+}
+.dbsetup-card--wide { width: 560px; }
+
+.dbsetup-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.dbsetup-logo { font-size: 36px; }
+.dbsetup-header h1 { font-size: 20px; font-weight: 700; margin-bottom: 2px; }
+
+/* Step indicators */
+.dbsetup-steps {
+  display: flex;
+  align-items: center;
+  margin-bottom: 22px;
+  gap: 0;
+}
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.step-item.active { color: var(--accent); }
+.step-item.done   { color: var(--success); }
+.step-circle {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  border: 1.5px solid currentColor;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.step-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+  margin: 0 8px;
+  min-width: 20px;
+}
+
+.dbsetup-body { display: flex; flex-direction: column; gap: 14px; }
+.dbsetup-help { font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
+
+/* Engine cards */
+.engine-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.engine-card {
+  position: relative;
+  padding: 14px;
+  background: var(--bg-elevated);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  color: var(--text-primary);
+  transition: border-color 0.12s, background 0.12s;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.engine-card:hover    { border-color: var(--border-focus); background: var(--bg-overlay); }
+.engine-card.selected { border-color: var(--accent); background: var(--accent-dim); }
+.engine-icon { font-size: 24px; margin-bottom: 4px; }
+.engine-card strong { font-size: 13px; font-weight: 600; }
+.engine-card p { font-size: 11px; color: var(--text-muted); margin: 0; line-height: 1.5; }
+.engine-tick {
+  position: absolute;
+  top: 10px; right: 10px;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* Inline engine pills (reconnect mode) */
+.engine-selector-inline { display: flex; gap: 8px; }
+.engine-pill {
+  padding: 6px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 20px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+.engine-pill:hover  { border-color: var(--border-focus); color: var(--text-primary); }
+.engine-pill.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+/* Config form */
+.config-form   { display: flex; flex-direction: column; gap: 12px; }
+.form-row-2    { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; }
+.field--narrow { width: 90px; }
+
+.field-inline { display: flex; align-items: center; gap: 8px; }
+.field-inline input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--accent); flex-shrink: 0; }
+
+.config-preview {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  word-break: break-all;
+}
+
+/* Test result banner */
+.test-result {
+  padding: 9px 14px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-weight: 500;
+}
+.test-result.success {
+  background: rgba(34,197,94,0.1);
+  border: 1px solid rgba(34,197,94,0.3);
+  color: var(--success);
+}
+.test-result.fail {
+  background: rgba(239,68,68,0.08);
+  border: 1px solid rgba(239,68,68,0.3);
+  color: var(--danger);
+}
+
+/* Actions row */
+.dbsetup-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+/* Connecting state */
+.dbsetup-connecting {
+  align-items: center;
+  text-align: center;
+  padding: 20px 0;
+}
+.dbsetup-connecting h2 { font-size: 18px; font-weight: 600; }
+
+/* Footer hint under card */
+.dbsetup-footer {
+  text-align: center;
+  position: relative;
+  z-index: 1;
+  max-width: 480px;
+}
+
+/* ── Embedded / reconnect mode ──────────────────────────────────────────── */
+.dbsetup-embed {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dbsetup-danger-zone {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.text-danger { color: var(--danger) !important; }

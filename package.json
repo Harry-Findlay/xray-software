@@ -1,0 +1,126 @@
+{
+  "name": "dental-xray-studio",
+  "version": "1.0.0",
+  "description": "Professional Dental X-Ray Imaging Software",
+  "main": "src/main/main.js",
+  "homepage": "./",
+  "author": {
+    "name": "Your Company Name",
+    "email": "support@yourcompany.com"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "concurrently \"npm run start:renderer\" \"wait-on http://localhost:3000 && npm run start:electron\"",
+    "start:electron": "cross-env NODE_ENV=development electron .",
+    "start:renderer": "cross-env BROWSER=none react-scripts start",
+    "build": "npm run build:renderer && npm run build:electron",
+    "build:renderer": "react-scripts build",
+    "build:electron": "electron-builder build",
+    "build:win": "electron-builder build --win",
+    "build:mac": "electron-builder build --mac",
+    "build:win:server": "electron-builder build --win --config electron-builder-server.json",
+    "build:mac:server": "electron-builder build --mac --config electron-builder-server.json",
+    "test": "react-scripts test",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "pg": "^8.11.3",
+    "node-firebird": "^1.0.5",
+    "bcryptjs": "^2.4.3",
+    "electron-store": "^8.1.0",
+    "electron-updater": "^6.1.7",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "node-machine-id": "^1.1.12",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.22.0",
+    "uuid": "^9.0.0",
+    "axios": "^1.6.7",
+    "electron-log": "^5.1.2",
+    "node-forge": "^1.3.1",
+    "dicom-parser": "^1.8.21",
+    "cornerstone-core": "^2.6.1",
+    "cornerstone-tools": "^6.0.10",
+    "cornerstone-wado-image-loader": "^4.13.2",
+    "cornerstone-math": "^0.1.10",
+    "hammerjs": "^2.0.8",
+    "zustand": "^4.5.0",
+    "date-fns": "^3.3.1",
+    "react-query": "^3.39.3"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^29.1.0",
+    "electron-builder": "^24.9.1",
+    "react-scripts": "5.0.1",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.yourcompany.dentalxraystudio",
+    "productName": "Dental X-Ray Studio",
+    "copyright": "Copyright © 2024 Your Company Name",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "build/**/*",
+      "src/main/**/*",
+      "src/shared/**/*",
+      "src/license/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/postgres",
+        "to": "postgres",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.ico",
+      "publisherName": "Your Company Name",
+      "signingHashAlgorithms": ["sha256"]
+    },
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.medical",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Dental X-Ray Studio",
+      "script": "installer/windows/installer.nsi"
+    },
+    "dmg": {
+      "icon": "build/icon.icns",
+      "iconSize": 80,
+      "window": { "width": 540, "height": 380 }
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "your-github-username",
+      "repo": "dental-xray-studio"
+    }
+  },
+  "browserslist": {
+    "production": [">0.2%", "not dead", "not op_mini all"],
+    "development": ["last 1 chrome version"]
+  }
+}

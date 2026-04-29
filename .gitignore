@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+
+# Build output
+build/
+dist/
+
+# PostgreSQL binaries — download separately, never commit these
+# They're too large for GitHub and change rarely.
+# Run scripts/download-postgres.ps1 to get them.
+resources/postgres/
+
+# Firebird binaries (if used)
+resources/firebird/
+
+# Environment / secrets
+.env
+.env.local
+.env.production
+*.pem
+
+# Electron store / user data
+userData/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/settings.json
+.idea/
+
+# Test coverage
+coverage/
+
+# Temporary
+*.tmp
+*.temp

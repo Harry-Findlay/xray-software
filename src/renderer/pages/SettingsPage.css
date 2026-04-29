@@ -1,0 +1,56 @@
+.settings-page    { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.saved-indicator  { font-size: 13px; color: var(--success); font-weight: 600; }
+.settings-body    { flex: 1; display: flex; overflow: hidden; }
+
+/* Side nav */
+.settings-nav { width: 180px; min-width: 180px; border-right: 1px solid var(--border); padding: 14px 8px; display: flex; flex-direction: column; gap: 2px; }
+.settings-nav-item {
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.1s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.settings-nav-item:hover  { background: var(--bg-elevated); color: var(--text-primary); }
+.settings-nav-item.active { background: var(--accent-dim); color: var(--accent); }
+.nav-warn { color: var(--danger); font-size: 12px; }
+
+/* Content area */
+.settings-content     { flex: 1; overflow-y: auto; padding: 24px; }
+.settings-section     { max-width: 640px; }
+.settings-section-title { font-size: 16px; font-weight: 600; margin-bottom: 14px; }
+.settings-card        { padding: 0; }
+.setting-row          { display: flex; align-items: flex-start; gap: 24px; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.setting-row:last-child { border-bottom: none; }
+.setting-label-group  { flex: 1; min-width: 0; }
+.setting-label-group label { font-size: 13px; font-weight: 500; }
+.setting-desc         { margin-top: 2px; }
+.setting-control      { flex-shrink: 0; min-width: 220px; }
+
+/* Database section */
+.db-settings-section  { display: flex; flex-direction: column; gap: 16px; max-width: 640px; }
+.db-status-card       { padding: 14px 18px !important; }
+.db-status-card.db-connected    { border-color: rgba(34,197,94,0.35) !important; }
+.db-status-card.db-disconnected { border-color: rgba(239,68,68,0.35) !important; }
+.db-status-row        { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.db-status-dot        { font-size: 14px; font-weight: 600; }
+.db-status-dot.ok     { color: var(--success); }
+.db-status-dot.err    { color: var(--danger); }
+
+/* License */
+.license-info-card  { padding: 4px 0; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.license-ok         { font-weight: 600; font-size: 14px; color: var(--success); }
+.license-none       { font-weight: 600; font-size: 14px; color: var(--danger); }
+
+/* About */
+.about-card         { text-align: center; padding: 28px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.about-card h2      { font-size: 20px; font-weight: 700; }

@@ -1,0 +1,20 @@
+{
+  "appId": "com.itinfinity.dentalxraystudio.server",
+  "productName": "Dental X-Ray Studio Server",
+  "artifactName": "${productName}-Server-Setup-${version}.${ext}",
+  "extraMetadata": {
+    "installType": "server"
+  },
+  "nsis": {
+    "include": "installer/windows/installer.nsi",
+    "script": "installer/windows/installer.nsi",
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  },
+  "win": {
+    "target": [{ "target": "nsis", "arch": ["x64"] }]
+  },
+  "mac": {
+    "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }]
+  }
+}
