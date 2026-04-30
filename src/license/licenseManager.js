@@ -1,131 +1,133 @@
 /**
- * LicenseManager
- *
+ * License Manager
+ * 
  * Strategy:
- *   - Licenses NEVER expire (no exp claim in JWT)
- *   - Revocation is handled server-side only: the server can mark a key as
- *     revoked and will refuse /validate requests. The client will clear the
- *     license after the grace period lapses without a successful server check.
- *   - Offline grace period: 7 days before the client asks the user to reconnect
- *   - Machine-bound: JWT contains a hashed machineId; switching machines requires
- *     deactivation first (or admin revoke + reissue)
- *
- * License Server API:
- *   POST /api/v1/activate   { licenseKey, machineId, machineInfo, appVersion }
+ * 1. On activation: sends machine fingerprint + license key to license server
+ * 2. Server validates and returns a signed JWT
+ * 3. JWT is stored encrypted locally
+ * 4. On each startup: validates JWT signature locally (offline-capable)
+ * 5. Periodically re-validates with server (every 24h by default)
+ * 
+ * License Server API (you implement this separately — see /docs/license-server.md):
+ *   POST /api/v1/activate   { licenseKey, machineId, machineInfo }
  *   POST /api/v1/deactivate { licenseKey, machineId, token }
  *   POST /api/v1/validate   { licenseKey, machineId, token }
- *
- * For local testing, run the license-server/ project on http://localhost:4000
- * and set LICENSE_SERVER_URL to that in development.
  */
 
-const { machineIdSync }    = require('node-machine-id');
-const jwt                  = require('jsonwebtoken');
-const axios                = require('axios');
-const log                  = require('electron-log');
-const os                   = require('os');
-const crypto               = require('crypto');
+const { machineIdSync } = require('node-machine-id');
+const jwt = require('jsonwebtoken');
+const axios = require('axios');
+const log = require('electron-log');
+const os = require('os');
+const crypto = require('crypto');
 
-// ── Config ──────────────────────────────────────────────────────────────────
-// In production replace LICENSE_SERVER_PUBLIC_KEY with your real RSA public key.
-// In dev/testing, if the placeholder is present, a local bypass is used.
+// This public key is used to verify JWT signatures from your license server
+// Generate with: openssl genrsa -out private.pem 2048 && openssl rsa -in private.pem -pubout -out public.pem
 const LICENSE_SERVER_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-REPLACE_WITH_YOUR_RSA_PUBLIC_KEY
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlYUfTxTvdUxz4Rml7ETN
+1kmoFXmdWequcG9Zwtlx6I+W7RqeOG/gWLbf1Bcyd2g+mWkXtlcg5TnyHeoHvdi3
+PPKiNZdYF8Zp473+8hCeAYGvrUfPz2qXl6vNNubi5fA3rElntzAe/NVc+0Piu3hO
+vS1CnuvRsDBtj1gpG5w7EhMG71oB18u1fFRwVFA1O376qMMyjW5e0bYPJrLalxDH
+0lrCHLY4UeCp2FF1eXuTxC5mIOI90dEIYdKRf4AFcaLH626R7d655PEiTz1JKBQz
+xSAcDOPXtneLnuymS3Y48ZoFV9X8sMCLCVHBF58tz0UDN155EuCFlJjQxFHGbPeo
+5QIDAQAB
 -----END PUBLIC KEY-----`;
 
-// Production URL — override in .env for dev: LICENSE_SERVER_URL=http://localhost:4000
-const LICENSE_SERVER_URL = process.env.LICENSE_SERVER_URL || 'https://license.yourcompany.com';
-
-// How often to re-check with the server (ms)
-const REVALIDATION_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24h
-
-// How long the app works without a successful server check
+const _isDev = process.env.NODE_ENV === 'development';
+const LICENSE_SERVER_URL = _isDev
+  ? 'http://localhost:4000'
+  : (process.env.LICENSE_SERVER_URL || 'https://license.yourcompany.com');
+const REVALIDATION_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const GRACE_PERIOD_DAYS = 7;
-
-// ── LicenseManager ──────────────────────────────────────────────────────────
 
 class LicenseManager {
   constructor(store) {
-    this.store  = store;
-    this._machineId       = null;
-    this.licenseStatus    = null;
+    this.store = store;
+    this.machineId = null;
+    this.licenseStatus = null;
     this.revalidationTimer = null;
   }
 
-  // ── Machine fingerprint ────────────────────────────────────────────────────
-
   getMachineId() {
-    if (!this._machineId) {
+    if (!this.machineId) {
       try {
         const raw = machineIdSync();
-        this._machineId = crypto
+        // Hash it so we don't expose the raw hardware ID
+        this.machineId = crypto
           .createHash('sha256')
-          .update(raw + 'dental-xray-v1')
+          .update(raw + 'dental-xray-salt')
           .digest('hex');
-      } catch {
-        this._machineId = crypto
+      } catch (err) {
+        // Fallback fingerprint
+        this.machineId = crypto
           .createHash('sha256')
           .update(os.hostname() + os.platform() + os.arch())
           .digest('hex');
       }
     }
-    return this._machineId;
+    return this.machineId;
   }
 
   getMachineInfo() {
     return {
       hostname: os.hostname(),
       platform: os.platform(),
-      arch:     os.arch(),
-      cpus:     os.cpus().length,
-      memory:   Math.round(os.totalmem() / 1024 / 1024 / 1024) + 'GB',
+      arch: os.arch(),
+      cpus: os.cpus().length,
+      totalMemory: os.totalmem(),
     };
   }
 
-  // ── Stored license data ────────────────────────────────────────────────────
+  getStoredToken() {
+    return this.store.get('license.token', null);
+  }
 
-  _getStored(field) { return this.store.get(`license.${field}`, null); }
-  _getToken()  { return this._getStored('token'); }
-  _getKey()    { return this._getStored('key'); }
-  _getLastOk() { return this._getStored('lastValidated'); }
+  getStoredKey() {
+    return this.store.get('license.key', null);
+  }
 
-  _persist(key, token) {
+  getLastValidated() {
+    return this.store.get('license.lastValidated', null);
+  }
+
+  storeActivation(key, token) {
     this.store.set('license', {
       key,
       token,
-      machineId:     this.getMachineId(),
-      activatedAt:   new Date().toISOString(),
+      machineId: this.getMachineId(),
+      activatedAt: new Date().toISOString(),
       lastValidated: new Date().toISOString(),
     });
   }
 
-  _clear() {
+  clearActivation() {
     this.store.delete('license');
     this.licenseStatus = null;
   }
 
-  // ── Local JWT verification (offline-capable) ───────────────────────────────
-
-  _verifyLocally(token) {
-    // Development bypass — no real key configured yet
-    if (LICENSE_SERVER_PUBLIC_KEY.includes('REPLACE_WITH')) {
-      log.warn('[License] Dev bypass active — no public key configured');
-      return {
-        valid: true,
-        dev: true,
-        payload: { tier: 'professional', seats: 5, features: ['all'], machineId: this.getMachineId() },
-      };
-    }
-
+  /**
+   * Verify JWT locally without hitting the server
+   */
+  verifyTokenLocally(token) {
     try {
-      // Licenses have no exp claim — we use revocation instead
+      // Skip if no real public key configured yet
+      if (LICENSE_SERVER_PUBLIC_KEY.includes('REPLACE_WITH')) {
+        log.warn('License: Using development bypass (no public key configured)');
+        return { valid: true, payload: { tier: 'professional', maxUsers: 5, features: ['all'] }, dev: true };
+      }
+
       const payload = jwt.verify(token, LICENSE_SERVER_PUBLIC_KEY, {
         algorithms: ['RS256'],
-        issuer:     'dental-xray-license-server',
-        ignoreExpiration: true,   // no expiry — revocation is server-side
+        issuer: 'dental-xray-license-server',
       });
 
-      // Machine binding check
+      // Check expiry
+      const expiresAt = new Date(payload.exp * 1000);
+      if (expiresAt < new Date()) {
+        return { valid: false, reason: 'token_expired' };
+      }
+
+      // Check machine binding
       if (payload.machineId && payload.machineId !== this.getMachineId()) {
         return { valid: false, reason: 'machine_mismatch' };
       }
@@ -136,153 +138,159 @@ class LicenseManager {
     }
   }
 
-  // ── Activate ───────────────────────────────────────────────────────────────
-
+  /**
+   * Activate a license key against the server
+   */
   async activate(licenseKey) {
-    log.info(`[License] Activating key: ${licenseKey.slice(0, 8)}…`);
+    const machineId = this.getMachineId();
+    log.info(`License activation attempt for key: ${licenseKey.substring(0, 8)}...`);
+
+    // Dev bypass — simulate activation without network
+    if (LICENSE_SERVER_PUBLIC_KEY.includes('REPLACE_WITH')) {
+      log.warn('[License] Dev mode — simulating activation');
+      this.storeActivation(licenseKey, 'dev-token');
+      this.licenseStatus = { active: true, dev: true, license: { tier: 'developer', seats: 99 } };
+      return { success: true, license: this.licenseStatus.license };
+    }
+
     try {
-      const response = await axios.post(
-        `${LICENSE_SERVER_URL}/api/v1/activate`,
-        {
-          licenseKey,
-          machineId:   this.getMachineId(),
-          machineInfo: this.getMachineInfo(),
-          appVersion:  require('electron').app.getVersion(),
-        },
-        { timeout: 10000 }
-      );
+      const response = await axios.post(`${LICENSE_SERVER_URL}/api/v1/activate`, {
+        licenseKey,
+        machineId,
+        machineInfo: this.getMachineInfo(),
+        appVersion: require('electron').app.getVersion(),
+      }, { timeout: 10000 });
 
       if (response.data.success) {
         const { token, license } = response.data;
-        this._persist(licenseKey, token);
+        this.storeActivation(licenseKey, token);
         this.licenseStatus = { active: true, license, token };
-        this._scheduleRevalidation();
-        log.info('[License] Activated successfully');
+        this.scheduleRevalidation();
+        log.info('License activated successfully');
         return { success: true, license };
+      } else {
+        return { success: false, error: response.data.error || 'Activation failed' };
       }
-      return { success: false, error: response.data.error || 'Activation failed' };
     } catch (err) {
-      const msg = err.response?.data?.error || err.message;
-      log.error('[License] Activate error:', msg);
-      return { success: false, error: msg };
+      const errMsg = err.response?.data?.error || err.message;
+      log.error(`License activation error: ${errMsg}`);
+      return { success: false, error: errMsg };
     }
   }
 
-  // ── Deactivate (release seat) ──────────────────────────────────────────────
-
+  /**
+   * Deactivate and release the license seat
+   */
   async deactivate() {
-    const key   = this._getKey();
-    const token = this._getToken();
+    const key = this.getStoredKey();
+    const token = this.getStoredToken();
     if (!key) return { success: false, error: 'No active license' };
 
     try {
-      await axios.post(
-        `${LICENSE_SERVER_URL}/api/v1/deactivate`,
-        { licenseKey: key, machineId: this.getMachineId(), token },
-        { timeout: 8000 }
-      );
+      await axios.post(`${LICENSE_SERVER_URL}/api/v1/deactivate`, {
+        licenseKey: key,
+        machineId: this.getMachineId(),
+        token,
+      }, { timeout: 10000 });
     } catch (err) {
-      log.warn('[License] Could not reach server to deactivate — clearing locally anyway');
+      log.warn('Could not contact server to deactivate, clearing locally anyway');
     }
 
-    this._clear();
+    this.clearActivation();
     if (this.revalidationTimer) clearInterval(this.revalidationTimer);
     return { success: true };
   }
 
-  // ── Validate (called at startup + periodically) ────────────────────────────
-
+  /**
+   * Validate license on startup - works offline within grace period
+   */
   async validate() {
-    const token = this._getToken();
-    const key   = this._getKey();
+    // Dev bypass — fires immediately if no real public key is configured.
+    // No token, no server, no network needed.
+    if (LICENSE_SERVER_PUBLIC_KEY.includes('REPLACE_WITH')) {
+      log.warn('[License] Dev bypass active — replace public key to enforce licensing');
+      this.licenseStatus = { active: true, dev: true, license: { tier: 'developer', seats: 99, features: ['all'] } };
+      return this.licenseStatus;
+    }
+
+    const token = this.getStoredToken();
+    const key = this.getStoredKey();
 
     if (!token || !key) {
       this.licenseStatus = { active: false, reason: 'not_activated' };
       return this.licenseStatus;
     }
 
-    // 1. Local JWT check (no network required)
-    const local = this._verifyLocally(token);
-
-    // Dev bypass
-    if (local.dev) {
-      this.licenseStatus = { active: true, dev: true, license: local.payload };
+    // First: local validation (offline-capable)
+    const localResult = this.verifyTokenLocally(token);
+    
+    if (localResult.dev) {
+      this.licenseStatus = { active: true, dev: true, license: localResult.payload };
       return this.licenseStatus;
     }
 
-    // Signature invalid — clear immediately
-    if (!local.valid && local.reason !== 'grace') {
-      // Don't clear immediately — check grace period first
-      const lastOk = this._getLastOk();
-      if (lastOk) {
-        const days = (Date.now() - new Date(lastOk).getTime()) / 86400000;
-        if (days <= GRACE_PERIOD_DAYS) {
-          log.warn(`[License] Token check failed but in grace period (${days.toFixed(1)}d / ${GRACE_PERIOD_DAYS}d)`);
-          this.licenseStatus = { active: true, grace: true, daysRemaining: Math.ceil(GRACE_PERIOD_DAYS - days), license: local.payload };
+    if (!localResult.valid) {
+      // Token invalid — check grace period
+      const lastValidated = this.getLastValidated();
+      if (lastValidated) {
+        const daysSinceValidation = (Date.now() - new Date(lastValidated).getTime()) / (1000 * 60 * 60 * 24);
+        if (daysSinceValidation <= GRACE_PERIOD_DAYS) {
+          log.warn(`License token invalid but within grace period (${daysSinceValidation.toFixed(1)} days)`);
+          this.licenseStatus = { active: true, grace: true, daysRemaining: GRACE_PERIOD_DAYS - daysSinceValidation };
           return this.licenseStatus;
         }
       }
-      log.warn('[License] Token invalid and grace period lapsed');
-      this._clear();
-      this.licenseStatus = { active: false, reason: local.reason };
+      this.licenseStatus = { active: false, reason: localResult.reason };
       return this.licenseStatus;
     }
 
-    // 2. Server re-validation if due
-    const lastOk = this._getLastOk();
-    const needsCheck = !lastOk || (Date.now() - new Date(lastOk).getTime() > REVALIDATION_INTERVAL_MS);
-    if (needsCheck) {
-      await this._revalidateWithServer(key, token);
+    // Token valid locally — try server re-validation if due
+    const lastValidated = this.getLastValidated();
+    const needsRevalidation = !lastValidated || 
+      (Date.now() - new Date(lastValidated).getTime() > REVALIDATION_INTERVAL_MS);
+
+    if (needsRevalidation) {
+      await this.revalidateWithServer(key, token);
     }
 
-    // Re-read in case server revoked
-    if (!this._getToken()) {
-      this.licenseStatus = { active: false, reason: 'revoked' };
-      return this.licenseStatus;
-    }
-
-    this.licenseStatus = { active: true, license: local.payload };
-    this._scheduleRevalidation();
+    this.licenseStatus = { active: true, license: localResult.payload };
+    this.scheduleRevalidation();
     return this.licenseStatus;
   }
 
-  // ── Server re-validation ───────────────────────────────────────────────────
-
-  async _revalidateWithServer(key, token) {
+  async revalidateWithServer(key, token) {
     try {
-      const response = await axios.post(
-        `${LICENSE_SERVER_URL}/api/v1/validate`,
-        { licenseKey: key, machineId: this.getMachineId(), token },
-        { timeout: 8000 }
-      );
+      const response = await axios.post(`${LICENSE_SERVER_URL}/api/v1/validate`, {
+        licenseKey: key,
+        machineId: this.getMachineId(),
+        token,
+      }, { timeout: 8000 });
 
       if (response.data.success) {
-        // Server may issue a refreshed token
         if (response.data.token) {
+          // Server issued a refreshed token
           this.store.set('license.token', response.data.token);
         }
         this.store.set('license.lastValidated', new Date().toISOString());
-        log.info('[License] Server revalidation OK');
+        log.info('License revalidated with server');
       } else {
-        // Server says revoked
-        log.warn('[License] Server says revoked:', response.data.error);
-        this._clear();
+        log.warn('Server says license is invalid:', response.data.error);
+        this.clearActivation();
       }
     } catch (err) {
-      log.warn('[License] Server unreachable for revalidation (will use grace period):', err.message);
-      // Do NOT clear — offline is allowed within grace period
+      // Offline — that's OK, we'll use grace period
+      log.warn('Could not reach license server for revalidation:', err.message);
     }
   }
 
-  _scheduleRevalidation() {
+  scheduleRevalidation() {
     if (this.revalidationTimer) clearInterval(this.revalidationTimer);
     this.revalidationTimer = setInterval(async () => {
-      const key = this._getKey(); const token = this._getToken();
-      if (key && token) await this._revalidateWithServer(key, token);
+      const key = this.getStoredKey();
+      const token = this.getStoredToken();
+      if (key && token) await this.revalidateWithServer(key, token);
     }, REVALIDATION_INTERVAL_MS);
   }
-
-  // ── Public status ──────────────────────────────────────────────────────────
 
   getStatus() {
     return this.licenseStatus || { active: false, reason: 'not_checked' };

@@ -1,20 +1,54 @@
 {
-  "appId": "com.itinfinity.dentalxraystudio.server",
-  "productName": "Dental X-Ray Studio Server",
-  "artifactName": "${productName}-Server-Setup-${version}.${ext}",
-  "extraMetadata": {
-    "installType": "server"
+  "appId": "com.yourcompany.dentalxraystudio",
+  "productName": "Dental X-Ray Studio",
+  "copyright": "Copyright \u00a9 2026 IT INFINITY LIMITED",
+  "directories": {
+    "output": "dist",
+    "buildResources": "build"
   },
-  "nsis": {
-    "include": "installer/windows/installer.nsi",
-    "script": "installer/windows/installer.nsi",
-    "oneClick": false,
-    "allowToChangeInstallationDirectory": true
+  "files": [
+    "build/**/*",
+    "src/main/**/*",
+    "src/license/**/*",
+    "node_modules/**/*",
+    "package.json"
+  ],
+  "extraResources": [
+    {
+      "from": "resources/postgres",
+      "to": "postgres",
+      "filter": [
+        "**/*"
+      ]
+    },
+    {
+      "from": "resources/setup-db.bat",
+      "to": "setup-db.bat"
+    }
+  ],
+  "extraMetadata": {
+    "installType": "server",
+    "main": "src/main/main.js"
   },
   "win": {
-    "target": [{ "target": "nsis", "arch": ["x64"] }]
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
+    "publisherName": "IT INFINITY LIMITED"
   },
-  "mac": {
-    "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }]
-  }
+  "nsis": {
+    "warningsAsErrors": false,
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": false,
+    "perMachine": true,
+    "deleteAppDataOnUninstall": false,
+    "include": "installer/installer.nsh"
+  },
+  "artifactName": "Dental-XRay-Studio-Server-Setup-${version}.${ext}",
+  "extends": null
 }

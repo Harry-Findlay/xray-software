@@ -17,10 +17,10 @@
     "build": "npm run build:renderer && npm run build:electron",
     "build:renderer": "react-scripts build",
     "build:electron": "electron-builder build",
-    "build:win": "electron-builder build --win",
-    "build:mac": "electron-builder build --mac",
-    "build:win:server": "electron-builder build --win --config electron-builder-server.json",
-    "build:mac:server": "electron-builder build --mac --config electron-builder-server.json",
+    "build:win": "npm run build:renderer && electron-builder build --win",
+    "build:mac": "npm run build:renderer && electron-builder build --mac",
+    "build:win:server": "npm run build:renderer && electron-builder build --win --config electron-builder-server.json",
+    "build:mac:server": "npm run build:renderer && electron-builder build --mac --config electron-builder-server.json",
     "test": "react-scripts test",
     "postinstall": "electron-builder install-app-deps"
   },
@@ -61,7 +61,7 @@
   "build": {
     "appId": "com.yourcompany.dentalxraystudio",
     "productName": "Dental X-Ray Studio",
-    "copyright": "Copyright © 2024 Your Company Name",
+    "copyright": "Copyright \u00a9 2024 Your Company Name",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -78,31 +78,40 @@
       {
         "from": "resources/postgres",
         "to": "postgres",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
-      "icon": "build/icon.ico",
-      "publisherName": "Your Company Name",
-      "signingHashAlgorithms": ["sha256"]
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "publisherName": "Your Company Name"
     },
     "mac": {
-      "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }],
-      "icon": "build/icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
       "category": "public.app-category.medical",
       "hardenedRuntime": true,
-      "gatekeeperAssess": false,
-      "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
+      "gatekeeperAssess": false
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "allowElevation": true,
-      "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico",
-      "installerHeaderIcon": "build/icon.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Dental X-Ray Studio",
@@ -111,16 +120,24 @@
     "dmg": {
       "icon": "build/icon.icns",
       "iconSize": 80,
-      "window": { "width": 540, "height": 380 }
+      "window": {
+        "width": 540,
+        "height": 380
+      }
     },
-    "publish": {
-      "provider": "github",
-      "owner": "your-github-username",
-      "repo": "dental-xray-studio"
+    "extends": null,
+    "extraMetadata": {
+      "main": "src/main/main.js"
     }
   },
   "browserslist": {
-    "production": [">0.2%", "not dead", "not op_mini all"],
-    "development": ["last 1 chrome version"]
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version"
+    ]
   }
 }
