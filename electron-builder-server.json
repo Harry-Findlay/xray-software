@@ -1,7 +1,7 @@
 {
   "appId": "com.yourcompany.dentalxraystudio",
   "productName": "Dental X-Ray Studio",
-  "copyright": "Copyright \u00a9 2026 IT INFINITY LIMITED",
+  "copyright": "Copyright © 2026 IT INFINITY LIMITED",
   "directories": {
     "output": "dist",
     "buildResources": "build"
@@ -17,9 +17,7 @@
     {
       "from": "resources/postgres",
       "to": "postgres",
-      "filter": [
-        "**/*"
-      ]
+      "filter": ["**/*"]
     },
     {
       "from": "resources/setup-db.bat",
@@ -31,14 +29,7 @@
     "main": "src/main/main.js"
   },
   "win": {
-    "target": [
-      {
-        "target": "nsis",
-        "arch": [
-          "x64"
-        ]
-      }
-    ],
+    "target": [{ "target": "nsis", "arch": ["x64"] }],
     "publisherName": "IT INFINITY LIMITED"
   },
   "nsis": {

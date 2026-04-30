@@ -20,20 +20,18 @@ import AuditLogPage       from './pages/AuditLogPage';
  * App-level state machine:
  *
  *   loading
- *     → license  (if not activated)        → LicensePage
- *     → dbSetup  (no DB config/connection)  → DatabaseSetupPage
+ *     → license  (if not activated)           → LicensePage
+ *     → dbSetup  (no DB config / connection)   → DatabaseSetupPage
  *     → ready
  *         → LoginPage          (if not authenticated)
  *         → AppShell + routes  (authenticated)
  */
-
 export default function App() {
   const [appState, setAppState] = useState('loading');
   const { isAuthenticated, checkSession } = useAuthStore();
   const { checkLicense }                  = useLicenseStore();
 
   useEffect(() => {
-    // Initialise Cornerstone once at startup (loads web workers, registers tools)
     initCornerstone().catch(err => console.warn('Cornerstone init error:', err));
     init();
   }, []);
@@ -46,12 +44,24 @@ export default function App() {
     if (!licenseOk) { setAppState('license'); return; }
 
     // 2. Database connection check
-    const dbStatus = await window.electronAPI?.db.status();
-    if (!dbStatus?.connected) { setAppState('dbSetup'); return; }
+    // FIX: window.electronAPI may exist but db.status() can still return
+    // undefined if the preload bridge isn't fully wired yet (e.g. during
+    // hot-reload in dev). Treat any non-true connected value as needing setup.
+    let dbConnected = false;
+    try {
+      if (window.electronAPI?.db?.status) {
+        const dbStatus = await window.electronAPI.db.status();
+        dbConnected = dbStatus?.connected === true;
+      }
+    } catch (err) {
+      console.warn('db.status() call failed:', err);
+      dbConnected = false;
+    }
 
-    // 3. Restore any prior session token (currently always false — must log in each launch)
+    if (!dbConnected) { setAppState('dbSetup'); return; }
+
+    // 3. Restore any prior session
     await checkSession();
-
     setAppState('ready');
   }
 
