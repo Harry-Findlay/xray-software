@@ -256,7 +256,8 @@ if not exist "%JSON_DIR%" mkdir "%JSON_DIR%"
     echo   "database": "dental_xray",
     echo   "user":     "dental",
     echo   "password": "%DB_PASSWORD%",
-    echo   "ssl":      false
+    echo   "ssl":      false,
+    echo   "image_store_path": "C:\\DentalXRayImages"
     echo }
 ) > "%JSON_DIR%\db-server.json"
 if errorlevel 1 ( echo [WARN] Could not write db-server.json. >> "%LOG_FILE%" ) else ( echo [OK] db-server.json written to %JSON_DIR% >> "%LOG_FILE%" )
@@ -282,5 +283,13 @@ echo( >> "%LOG_FILE%"
     echo  Data    : %PG_DATA%
     echo ============================================
 ) >> "%LOG_FILE%"
+
+:: STEP 18b - Create default image store directory
+echo [STEP 18b] Creating default image store... >> "%LOG_FILE%"
+if not exist "C:\DentalXRayImages" mkdir "C:\DentalXRayImages"
+icacls "C:\DentalXRayImages" /grant "NT AUTHORITY\SYSTEM:(OI)(CI)F" /T /Q >nul 2>&1
+icacls "C:\DentalXRayImages" /grant "BUILTIN\Administrators:(OI)(CI)F" /T /Q >nul 2>&1
+icacls "C:\DentalXRayImages" /grant "BUILTIN\Users:(OI)(CI)F" /T /Q >nul 2>&1
+echo [OK] Image store created at C:\DentalXRayImages >> "%LOG_FILE%"
 
 exit /b 0

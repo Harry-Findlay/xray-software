@@ -1,16 +1,16 @@
 !include "LogicLib.nsh"
 !include "nsDialogs.nsh"
 
-; ── Variables ────────────────────────────────────────────────────────────────
-; InstallType is only relevant for the server build (where this .nsh is
-; included). The client build uses package.json nsis.script instead, so
-; this page is never shown on client installs.
 Var Dialog
 Var RadioServer
 Var RadioClient
 Var InstallType
+Var DataDirText
+Var DataDirPath
+Var ImageDirText
+Var ImageDirPath
 
-; ── Custom page: Client vs Server choice ─────────────────────────────────────
+; ── Page 1: Client vs Server ──────────────────────────────────────────────────
 Function InstallTypePage
   nsDialogs::Create 1018
   Pop $Dialog
@@ -18,14 +18,14 @@ Function InstallTypePage
     Abort
   ${EndIf}
 
-  ${NSD_CreateLabel} 0 0 100% 30u "Select installation type:$\r$\nChoose Server on the machine that will host the database. Choose Client on workstations that will connect to it."
+  ${NSD_CreateLabel} 0 0 100% 40u "Select installation type:$\r$\nServer: hosts the database on this machine.$\r$\nClient: connects to an existing database server."
   Pop $0
 
-  ${NSD_CreateRadioButton} 10 38u 100% 14u "Server — installs PostgreSQL database service on this machine"
+  ${NSD_CreateRadioButton} 10 46u 100% 14u "Server — install PostgreSQL on this machine"
   Pop $RadioServer
-  ${NSD_Check} $RadioServer   ; default to Server since this IS the server installer
+  ${NSD_Check} $RadioServer
 
-  ${NSD_CreateRadioButton} 10 56u 100% 14u "Client — this machine will connect to an existing database server"
+  ${NSD_CreateRadioButton} 10 64u 100% 14u "Client — connect to an existing database server"
   Pop $RadioClient
 
   nsDialogs::Show
@@ -40,30 +40,90 @@ Function InstallTypePageLeave
   ${EndIf}
 FunctionEnd
 
-; ── Hook: inject our page before the install page ────────────────────────────
+; ── Page 2: Storage locations (server only, both on one page) ─────────────────
+Function StoragePathsPage
+  ${If} $InstallType != "server"
+    Abort
+  ${EndIf}
+
+  ${If} $DataDirPath == ""
+    StrCpy $DataDirPath "C:\DentalXRayStudio\Database"
+  ${EndIf}
+  ${If} $ImageDirPath == ""
+    StrCpy $ImageDirPath "C:\DentalXRayStudio\Images"
+  ${EndIf}
+
+  nsDialogs::Create 1018
+  Pop $Dialog
+  ${If} $Dialog == error
+    Abort
+  ${EndIf}
+
+  ${NSD_CreateLabel} 0 0 100% 12u "Database storage location:"
+  Pop $0
+  ${NSD_CreateText} 0 14u 255u 13u $DataDirPath
+  Pop $DataDirText
+  ${NSD_CreateButton} 260u 13u 50u 15u "Browse..."
+  Pop $0
+  ${NSD_OnClick} $0 BrowseDataDir
+
+  ${NSD_CreateLabel} 0 36u 100% 12u "X-Ray image storage location (must be backed up, retained 10 years per GDC/IRR17):"
+  Pop $0
+  ${NSD_CreateText} 0 50u 255u 13u $ImageDirPath
+  Pop $ImageDirText
+  ${NSD_CreateButton} 260u 49u 50u 15u "Browse..."
+  Pop $0
+  ${NSD_OnClick} $0 BrowseImageDir
+
+  nsDialogs::Show
+FunctionEnd
+
+Function BrowseDataDir
+  nsDialogs::SelectFolderDialog "Select database storage location" $DataDirPath
+  Pop $0
+  ${If} $0 != error
+    StrCpy $DataDirPath $0
+    ${NSD_SetText} $DataDirText $0
+  ${EndIf}
+FunctionEnd
+
+Function BrowseImageDir
+  nsDialogs::SelectFolderDialog "Select X-ray image storage location" $ImageDirPath
+  Pop $0
+  ${If} $0 != error
+    StrCpy $ImageDirPath $0
+    ${NSD_SetText} $ImageDirText $0
+  ${EndIf}
+FunctionEnd
+
+Function StoragePathsPageLeave
+  ${NSD_GetText} $DataDirText $DataDirPath
+  ${NSD_GetText} $ImageDirText $ImageDirPath
+  ${If} $DataDirPath == ""
+    MessageBox MB_ICONEXCLAMATION|MB_OK "Please enter a database storage location."
+    Abort
+  ${EndIf}
+  ${If} $ImageDirPath == ""
+    MessageBox MB_ICONEXCLAMATION|MB_OK "Please enter an image storage location."
+    Abort
+  ${EndIf}
+FunctionEnd
+
+; ── Inject pages ──────────────────────────────────────────────────────────────
 !macro customWelcomePage
-  Page custom InstallTypePage InstallTypePageLeave
+  Page custom InstallTypePage    InstallTypePageLeave
+  Page custom StoragePathsPage   StoragePathsPageLeave
 !macroend
 
-; ── Hook: run after files are laid down ───────────────────────────────────────
-; FIX: Pass $INSTDIR as second argument so setup-db.bat knows where to write
-;      db-server.json. Original passed only the PG bin path.
+; ── Run setup after files are laid down ───────────────────────────────────────
 !macro customInstall
   ${If} $InstallType == "server"
-    DetailPrint "Running PostgreSQL setup — this may take up to 60 seconds..."
-
-    ; ExecToLog captures stdout+stderr into the NSIS detail log.
-    ; We pass two arguments:
-    ;   %1 = path to pgsql binaries
-    ;   %2 = app install directory (for db-server.json placement)
-    nsExec::ExecToLog '"$INSTDIR\resources\setup-db.bat" \
-      "$INSTDIR\resources\postgres\pgsql" \
-      "$INSTDIR"'
+    DetailPrint "Running PostgreSQL setup..."
+    CreateDirectory "$ImageDirPath"
+    nsExec::ExecToLog '"$INSTDIR\resources\setup-db.bat" "$INSTDIR\resources\postgres\pgsql" "$INSTDIR" "$DataDirPath" "$ImageDirPath"'
     Pop $0
-
     ${If} $0 != 0
-      MessageBox MB_ICONEXCLAMATION|MB_OK \
-        "PostgreSQL setup encountered an issue (exit code $0).$\r$\n$\r$\nThe application was installed but the database may need manual configuration.$\r$\n$\r$\nSee the setup log at:$\r$\n%TEMP%\dental-xray-setup.log"
+      MessageBox MB_ICONEXCLAMATION|MB_OK "PostgreSQL setup failed (exit $0).$\r$\nSee: $DataDirPath\dental-xray-setup.log"
     ${Else}
       DetailPrint "PostgreSQL setup completed successfully."
     ${EndIf}
@@ -72,18 +132,12 @@ FunctionEnd
   ${EndIf}
 !macroend
 
-; ── Hook: customise uninstall if needed ───────────────────────────────────────
+; ── Uninstall ─────────────────────────────────────────────────────────────────
 !macro customUnInstall
-  ; Offer to stop and remove the DB service on uninstall
   ${If} $InstallType == "server"
-    MessageBox MB_YESNO|MB_ICONQUESTION \
-      "Do you want to stop and remove the PostgreSQL database service?$\r$\n$\r$\nChoose No to keep your data intact." \
-      IDNO skip_service_removal
-
-    DetailPrint "Stopping service $SERVICE_NAME..."
+    MessageBox MB_YESNO|MB_ICONQUESTION "Remove the PostgreSQL database service?$\r$\nChoose No to keep your data." \
+      IDNO +3
     nsExec::ExecToLog 'net stop "DentalXRayDB"'
     nsExec::ExecToLog 'sc delete "DentalXRayDB"'
-
-    skip_service_removal:
   ${EndIf}
 !macroend

@@ -6,14 +6,16 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const [stats, setStats] = useState({ patients: 0, studiesThisMonth: 0, recentPatients: [] });
 
-  useEffect(() => {
-    loadStats();
-  }, []);
+  useEffect(() => { loadStats(); }, []);
 
   const loadStats = async () => {
     try {
       const patients = await window.electronAPI?.patients.getAll() || [];
-      setStats(prev => ({ ...prev, patients: patients.length, recentPatients: patients.slice(0, 5) }));
+      setStats(prev => ({
+        ...prev,
+        patients: patients.length,
+        recentPatients: patients.slice(0, 5),
+      }));
     } catch (err) {
       console.error(err);
     }
@@ -39,16 +41,6 @@ export default function DashboardPage() {
           <div className="stat-value">{stats.studiesThisMonth}</div>
           <div className="stat-label text-muted">Studies This Month</div>
         </div>
-        <div className="stat-card card">
-          <div className="stat-icon">📅</div>
-          <div className="stat-value">0</div>
-          <div className="stat-label text-muted">Today's Appointments</div>
-        </div>
-        <div className="stat-card card">
-          <div className="stat-icon">📋</div>
-          <div className="stat-value">0</div>
-          <div className="stat-label text-muted">Pending Reports</div>
-        </div>
       </div>
 
       <div className="dashboard-grid">
@@ -57,7 +49,8 @@ export default function DashboardPage() {
           {stats.recentPatients.length === 0 ? (
             <div className="empty-state">
               <span>No patients yet</span>
-              <button className="btn btn-primary btn-sm" onClick={() => navigate('/patients/new')}>
+              <button className="btn btn-primary btn-sm"
+                onClick={() => navigate('/patients/new')}>
                 Add First Patient
               </button>
             </div>
@@ -68,16 +61,22 @@ export default function DashboardPage() {
                   <th>Patient #</th>
                   <th>Name</th>
                   <th>DOB</th>
-                  <th>Phone</th>
                 </tr>
               </thead>
               <tbody>
                 {stats.recentPatients.map(p => (
-                  <tr key={p.id} onClick={() => navigate(`/patients/${p.id}`)} className="clickable">
+                  <tr key={p.id}
+                    onClick={() => navigate(`/patients/${p.id}`)}
+                    className="clickable">
                     <td className="mono text-xs">{p.patient_number}</td>
                     <td>{p.last_name}, {p.first_name}</td>
-                    <td className="text-muted">{p.date_of_birth || '—'}</td>
-                    <td className="text-muted">{p.phone || '—'}</td>
+                    <td className="text-muted">
+                      {p.date_of_birth
+                        ? (p.date_of_birth instanceof Date
+                          ? p.date_of_birth.toLocaleDateString('en-GB')
+                          : p.date_of_birth)
+                        : '—'}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -88,11 +87,18 @@ export default function DashboardPage() {
         <div className="card">
           <h2 className="section-title">Quick Actions</h2>
           <div className="quick-actions">
+            <button className="quick-action-btn" onClick={() => navigate('/patients/new')}>
+              <span className="qa-icon">👤</span>
+              <span>New Patient</span>
+            </button>
             <button className="quick-action-btn" onClick={() => navigate('/patients')}>
               <span className="qa-icon">🔍</span>
               <span>Search Patients</span>
             </button>
-            <button className="quick-action-btn" onClick={() => window.electronAPI?.dialog.openFile({ filters: [{ name: 'DICOM', extensions: ['dcm', 'dicom'] }], properties: ['openFile', 'multiSelections'] })}>
+            <button className="quick-action-btn" onClick={() => window.electronAPI?.dialog.openFile({
+              filters: [{ name: 'DICOM', extensions: ['dcm', 'dicom'] }],
+              properties: ['openFile', 'multiSelections'],
+            })}>
               <span className="qa-icon">📂</span>
               <span>Import DICOM</span>
             </button>
