@@ -437,6 +437,7 @@ export default function PatientDetailPage() {
                 onOpen={s => navigate(`/imaging/${s.id}`)}
                 onCapture={handleCaptureXRay}
                 onImport={() => setShowImport(true)}
+                formatDate={formatDate}
               />
             )}
             {activeTab === 'Reports' && (
@@ -486,7 +487,7 @@ function OverviewTab({ patient, formatDate }) {
   );
 }
 
-function ImagesTab({ studies, onOpen, onCapture, onImport }) {
+function ImagesTab({ studies, onOpen, onCapture, onImport, formatDate }) {
   const categoryLabel = modality => {
     if (modality === 'DX') return 'OPG';
     if (modality === 'ES') return 'Video';
@@ -516,7 +517,7 @@ function ImagesTab({ studies, onOpen, onCapture, onImport }) {
               <div className="study-info">
                 <span className="badge badge-blue">{categoryLabel(s.modality)}</span>
                 <span>{s.study_description || 'Image set'}</span>
-                <span className="text-muted text-xs">{s.study_date || '—'}</span>
+                <span className="text-muted text-xs">{formatDate(s.study_date)}</span>
               </div>
               <span className="text-muted text-xs">
                 {s.image_count} image{s.image_count !== 1 ? 's' : ''}

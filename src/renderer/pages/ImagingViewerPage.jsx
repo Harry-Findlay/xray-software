@@ -17,19 +17,25 @@ const TOOLS = [
   { id: 'ellipse',  icon: '⬭',  label: 'Ellipse',tooltip: 'Ellipse ROI' },
 ];
 
+// Dental-appropriate W/L presets
+// Periapical / bitewing images are typically 8-bit (0-255) grayscale.
+// Panoramic (OPG) images may be 12-bit from digital sensors.
 const WL_PRESETS = [
-  { label: 'Default',     w: 4000, l: 1000 },
-  { label: 'Bone',        w: 1500, l: 400  },
-  { label: 'Soft Tissue', w: 400,  l: 40   },
-  { label: 'Lung',        w: 1600, l: -600 },
+  { label: 'Default',    w: 4000, l: 2000 },  // Auto-fit starting point
+  { label: 'Periapical', w: 300,  l: 150  },  // Standard intra-oral bitewing/PA
+  { label: 'Caries',     w: 200,  l: 100  },  // Narrow window to highlight interproximal decay
+  { label: 'Perio',      w: 600,  l: 300  },  // Wider range for bone level assessment
+  { label: 'OPG',        w: 3000, l: 1500 },  // Panoramic — wide range, brighter centre
+  { label: 'Implant',    w: 1500, l: 700  },  // High contrast for metalwork / bone interface
+  { label: 'Endo',       w: 250,  l: 125  },  // Narrow for root canal / file visibility
 ];
 
 export default function ImagingViewerPage() {
   const { studyId } = useParams();
   const navigate    = useNavigate();
 
-  const viewerRef   = useRef(null);   // DOM div — Cornerstone enables on this
-  const csEnabled   = useRef(false);  // Has cornerstone.enable() been called?
+  const viewerRef   = useRef(null);
+  const csEnabled   = useRef(false);
 
   const [study,            setStudy]            = useState(null);
   const [instances,        setInstances]        = useState([]);
@@ -39,12 +45,13 @@ export default function ImagingViewerPage() {
   const [imageLoading,     setImageLoading]     = useState(false);
   const [viewportInfo,     setViewportInfo]     = useState(null);
   const [error,            setError]            = useState('');
+  const [confirmDelete,    setConfirmDelete]    = useState(false); // delete-instance confirm
+  const [deleting,         setDeleting]         = useState(false);
 
   // ── Load study ────────────────────────────────────────────────────────────
   useEffect(() => {
     loadStudy();
     return () => {
-      // Clean up Cornerstone on unmount
       if (csEnabled.current && viewerRef.current) {
         import('cornerstone-core').then(cs => {
           try { cs.disable(viewerRef.current); } catch {}
@@ -86,12 +93,9 @@ export default function ImagingViewerPage() {
     try {
       const { cornerstone, cornerstoneTools } = await getCornerstone();
 
-      // Enable the element (idempotent after first call)
       if (!csEnabled.current) {
         cornerstone.enable(element);
         csEnabled.current = true;
-
-        // Live viewport readout (W/L / zoom overlay)
         element.addEventListener('cornerstoneimagerendered', (e) => {
           const vp = e.detail?.viewport;
           if (vp?.voi) {
@@ -104,19 +108,12 @@ export default function ImagingViewerPage() {
         });
       }
 
-      // Build WADO-URI imageId — our local Express server streams the file
       const imageId = makeImageId(instance.file_path);
-
       const image = await cornerstone.loadAndCacheImage(imageId);
       cornerstone.displayImage(element, image);
-
-      // Restore the active tool
       _activateTool(cornerstoneTools, activeTool);
-
-      // Fit to viewport
       cornerstone.fitToWindow(element);
 
-      // Restore saved annotations
       if (instance.annotations) {
         try {
           const saved = typeof instance.annotations === 'string'
@@ -161,10 +158,11 @@ export default function ImagingViewerPage() {
       if (map[e.key]) handleToolSelect(map[e.key]);
       if (e.key === 'r' || e.key === 'R') resetViewport(viewerRef.current);
       if (e.key === 'i' || e.key === 'I') toggleInvert(viewerRef.current);
+      if (e.key === 'Delete' && selectedInstance) setConfirmDelete(true);
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
+  }, [selectedInstance]);
 
   // ── Menu event: zoom/fit from app menu ────────────────────────────────────
   useEffect(() => {
@@ -202,6 +200,30 @@ export default function ImagingViewerPage() {
     }
   };
 
+  // ── Delete current image ──────────────────────────────────────────────────
+  const handleDeleteInstance = async () => {
+    if (!selectedInstance) return;
+    setDeleting(true);
+    try {
+      await window.electronAPI?.imaging.deleteInstance(selectedInstance.id);
+      setConfirmDelete(false);
+      // Reload; if no instances remain, go back
+      const data = await window.electronAPI?.imaging.getStudy(studyId);
+      const remaining = data?.instances || [];
+      setInstances(remaining);
+      if (remaining.length) {
+        setSelectedInstance(remaining[0]);
+      } else {
+        navigate(-1);
+      }
+    } catch (err) {
+      setError('Delete failed: ' + err.message);
+      setConfirmDelete(false);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   // ── Import images ─────────────────────────────────────────────────────────
   const handleImportImages = async () => {
     const result = await window.electronAPI?.dialog.openFile({
@@ -224,6 +246,30 @@ export default function ImagingViewerPage() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="viewer-page">
+
+      {/* ── Delete confirmation dialog ── */}
+      {confirmDelete && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000,
+        }}>
+          <div className="card" style={{ width: 380, padding: 24 }}>
+            <h3 style={{ margin: '0 0 8px', fontSize: 16 }}>Delete Image?</h3>
+            <p style={{ margin: '0 0 20px', fontSize: 13, color: 'var(--text-secondary)' }}>
+              This will permanently remove the image file and cannot be undone.
+              The deletion will be recorded in the audit log.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary" onClick={() => setConfirmDelete(false)}
+                disabled={deleting}>Cancel</button>
+              <button className="btn btn-danger" onClick={handleDeleteInstance}
+                disabled={deleting}>
+                {deleting ? 'Deleting…' : '🗑 Delete Image'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Topbar ── */}
       <div className="viewer-topbar">
@@ -248,10 +294,16 @@ export default function ImagingViewerPage() {
               filters: [{ name: 'JPEG', extensions: ['jpg'] }, { name: 'PNG', extensions: ['png'] }],
             });
             if (!result?.canceled) {
-              // TODO: canvas.toBlob → fs.writeFileSync
               console.log('Export to:', result.filePath);
             }
           }}>↗ Export</button>
+          {selectedInstance && (
+            <button
+              className="btn btn-danger btn-sm"
+              onClick={() => setConfirmDelete(true)}
+              title="Delete this image (Delete key)"
+            >🗑 Delete</button>
+          )}
         </div>
       </div>
 
@@ -264,7 +316,9 @@ export default function ImagingViewerPage() {
               key={inst.id}
               className={`thumbnail ${selectedInstance?.id === inst.id ? 'active' : ''}`}
               onClick={() => setSelectedInstance(inst)}
-              title={inst.image_type ? `${inst.image_type}${inst.tooth_number ? ' — Tooth ' + inst.tooth_number : ''}` : `Image ${idx + 1}`}
+              title={inst.image_type
+                ? `${inst.image_type}${inst.tooth_number ? ' — Tooth ' + inst.tooth_number : ''}`
+                : `Image ${idx + 1}`}
             >
               <div className="thumbnail-preview">
                 {inst.thumbnail_path
@@ -286,7 +340,6 @@ export default function ImagingViewerPage() {
         {/* ── Main viewer canvas ── */}
         <div className="viewer-main">
 
-          {/* Cornerstone renders INTO this div — it must always be in the DOM */}
           <div
             ref={viewerRef}
             className="viewer-canvas"
@@ -294,7 +347,6 @@ export default function ImagingViewerPage() {
             style={{ display: instances.length > 0 && !loading ? 'block' : 'none' }}
           />
 
-          {/* States shown when canvas is hidden */}
           {loading && (
             <div className="viewer-empty">
               <span className="animate-spin" style={{ fontSize: 32 }}>⟳</span>
@@ -317,14 +369,12 @@ export default function ImagingViewerPage() {
             </div>
           )}
 
-          {/* Loading spinner overlay */}
           {imageLoading && (
             <div className="viewer-image-loading">
               <span className="animate-spin">⟳</span> Loading image…
             </div>
           )}
 
-          {/* DICOM overlays — top-left, top-right, bottom-left, bottom-right */}
           {csEnabled.current && selectedInstance && (
             <>
               <div className="overlay-tl">
@@ -395,7 +445,7 @@ export default function ImagingViewerPage() {
           <div className="divider" />
           <div className="tool-section-title">Keys</div>
           <div className="key-hints">
-            {[['W','W/L'],['Z','Zoom'],['P','Pan'],['L','Length'],['I','Invert'],['R','Reset']].map(([k, l]) => (
+            {[['W','W/L'],['Z','Zoom'],['P','Pan'],['L','Length'],['I','Invert'],['R','Reset'],['Del','Delete']].map(([k, l]) => (
               <div key={k} className="key-hint">
                 <kbd>{k}</kbd><span>{l}</span>
               </div>

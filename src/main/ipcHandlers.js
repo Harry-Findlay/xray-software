@@ -10,7 +10,7 @@ const log    = require('electron-log');
 const { writeAuditLog } = require('./auditLog');
 
 
-// ─── SERIALIZERS (FIX FOR DATE → STRING) ─────────────────────────────────────
+// ─── SERIALIZERS ─────────────────────────────────────────────────────────────
 
 function serializeRow(row) {
   if (!row || typeof row !== 'object') return row;
@@ -30,6 +30,20 @@ function serializeRows(rows) {
 
 function setupIpcHandlers(ipcMain, { licenseManager, store, dialog, app, db, dbReady, setDbReady }) {
 
+  // ─── Helper: resolve image store root ──────────────────────────────────────
+  // Uses the admin-configured image_store_path from system_settings.
+  // Falls back to userData/images — always writable and always in the WADO allowlist.
+  function _imageStoreRoot() {
+    try {
+      // Check electron-store cache first (avoids a DB round-trip on every import)
+      const cached = store?.get('imageStorePath') || '';
+      if (cached && fs.existsSync(cached)) return cached;
+    } catch {}
+    const fallback = path.join(app.getPath('userData'), 'images');
+    fs.mkdirSync(fallback, { recursive: true });
+    return fallback;
+  }
+
   // ─── DATABASE CONNECTION ───────────────────────────────────────────────────
 
   ipcMain.handle('db:status', async () => {
@@ -37,8 +51,8 @@ function setupIpcHandlers(ipcMain, { licenseManager, store, dialog, app, db, dbR
     return {
       connected: dbReady(),
       hasConfig:  !!config,
-      engine:     config?.engine  || null,
-      host:       config?.host    || null,
+      engine:     config?.engine   || null,
+      host:       config?.host     || null,
       database:   config?.database || config?.path || null,
     };
   });
@@ -100,7 +114,7 @@ function setupIpcHandlers(ipcMain, { licenseManager, store, dialog, app, db, dbR
 
       if (!rows.length) return { success: false, error: 'Invalid username or password' };
 
-      const user = rows[0];
+      const user  = rows[0];
       const valid = await bcrypt.compare(password, user.password_hash);
       if (!valid) return { success: false, error: 'Invalid username or password' };
 
@@ -109,7 +123,6 @@ function setupIpcHandlers(ipcMain, { licenseManager, store, dialog, app, db, dbR
       writeAuditLog({ action: 'LOGIN', username: user.username, resource_type: 'user', resource_id: user.id });
 
       const { password_hash, ...safeUser } = user;
-
       return { success: true, user: serializeRow(safeUser) };
 
     } catch (err) {
@@ -121,7 +134,9 @@ function setupIpcHandlers(ipcMain, { licenseManager, store, dialog, app, db, dbR
   ipcMain.handle('auth:changePassword', async (event, userId, oldPassword, newPassword) => {
     if (!dbReady()) return { success: false, error: 'Database not connected' };
 
-    const { rows } = await db.query(`SELECT password_hash FROM users WHERE id = ${db.ph(1)}`, [userId]);
+    const { rows } = await db.query(
+      `SELECT password_hash FROM users WHERE id = ${db.ph(1)}`, [userId]
+    );
 
     if (!rows.length) return { success: false, error: 'User not found' };
 
@@ -162,7 +177,6 @@ function setupIpcHandlers(ipcMain, { licenseManager, store, dialog, app, db, dbR
     sql += ' ORDER BY last_name, first_name LIMIT 500';
 
     const { rows } = await db.query(sql, params);
-
     return serializeRows(rows);
   });
 
@@ -176,6 +190,82 @@ function setupIpcHandlers(ipcMain, { licenseManager, store, dialog, app, db, dbR
     return serializeRow(rows[0]) || null;
   });
 
+  ipcMain.handle('patients:create', async (event, data) => {
+    if (!dbReady()) throw new Error('Database not connected');
+
+    const p  = db.ph;
+    const id = uuidv4();
+    const patientNumber = await _nextPatientNumber();
+
+    await db.query(
+      `INSERT INTO patients
+         (id, patient_number, first_name, last_name, date_of_birth,
+          gender, phone, email, nhs_number, external_id, notes, is_active)
+       VALUES (${p(1)},${p(2)},${p(3)},${p(4)},${p(5)},${p(6)},${p(7)},${p(8)},${p(9)},${p(10)},${p(11)},${p(12)})`,
+      [id, patientNumber,
+       data.firstName, data.lastName,
+       data.dateOfBirth   || null,
+       data.gender        || null,
+       data.phone         || null,
+       data.email         || null,
+       data.nhsNumber     || null,
+       data.externalId    || null,
+       data.notes         || null,
+       _active()]
+    );
+
+    writeAuditLog({ action: 'CREATE', resource_type: 'patient', resource_id: id });
+
+    return { id, patient_number: patientNumber };
+  });
+
+  ipcMain.handle('patients:update', async (event, id, data) => {
+    if (!dbReady()) throw new Error('Database not connected');
+
+    const p = db.ph;
+
+    await db.query(
+      `UPDATE patients SET
+         first_name    = ${p(1)},
+         last_name     = ${p(2)},
+         date_of_birth = ${p(3)},
+         gender        = ${p(4)},
+         phone         = ${p(5)},
+         email         = ${p(6)},
+         nhs_number    = ${p(7)},
+         external_id   = ${p(8)},
+         notes         = ${p(9)},
+         updated_at    = NOW()
+       WHERE id = ${p(10)}`,
+      [data.firstName, data.lastName,
+       data.dateOfBirth || null,
+       data.gender      || null,
+       data.phone       || null,
+       data.email       || null,
+       data.nhsNumber   || null,
+       data.externalId  || null,
+       data.notes       || null,
+       id]
+    );
+
+    writeAuditLog({ action: 'UPDATE', resource_type: 'patient', resource_id: id });
+
+    return { success: true };
+  });
+
+  ipcMain.handle('patients:delete', async (event, id) => {
+    if (!dbReady()) throw new Error('Database not connected');
+
+    await db.query(
+      `UPDATE patients SET is_active = ${db.ph(1)}, updated_at = NOW() WHERE id = ${db.ph(2)}`,
+      [false, id]
+    );
+
+    writeAuditLog({ action: 'DELETE', resource_type: 'patient', resource_id: id });
+
+    return { success: true };
+  });
+
   ipcMain.handle('patients:search', async (event, queryStr) => {
     if (!dbReady()) return [];
 
@@ -185,7 +275,7 @@ function setupIpcHandlers(ipcMain, { licenseManager, store, dialog, app, db, dbR
     const { rows } = await db.query(
       `SELECT id, patient_number, first_name, last_name, date_of_birth, phone
        FROM patients
-       WHERE is_active=${p(1)}
+       WHERE is_active = ${p(1)}
          AND (first_name ILIKE ${p(2)} OR last_name ILIKE ${p(3)}
               OR patient_number ILIKE ${p(4)} OR nhs_number ILIKE ${p(5)})
        ORDER BY last_name, first_name LIMIT 50`,
@@ -221,21 +311,283 @@ function setupIpcHandlers(ipcMain, { licenseManager, store, dialog, app, db, dbR
     const p = db.ph;
 
     const { rows: studyRows } = await db.query(
-      `SELECT * FROM imaging_studies WHERE id=${p(1)}`,
-      [studyId]
+      `SELECT * FROM imaging_studies WHERE id = ${p(1)}`, [studyId]
     );
 
     const { rows: instances } = await db.query(
-      `SELECT * FROM imaging_instances WHERE study_id=${p(1)} ORDER BY is_primary DESC, created_at`,
+      `SELECT * FROM imaging_instances WHERE study_id = ${p(1)} ORDER BY is_primary DESC, created_at`,
       [studyId]
     );
 
     writeAuditLog({ action: 'READ', resource_type: 'study', resource_id: studyId });
 
     return {
-      study: serializeRow(studyRows[0]) || null,
-      instances: serializeRows(instances)
+      study:     serializeRow(studyRows[0]) || null,
+      instances: serializeRows(instances),
     };
+  });
+
+  ipcMain.handle('imaging:createStudy', async (event, data) => {
+    if (!dbReady()) throw new Error('Database not connected');
+
+    const p  = db.ph;
+    const id = uuidv4();
+
+    await db.query(
+      `INSERT INTO imaging_studies
+         (id, patient_id, study_date, study_description, modality, status)
+       VALUES (${p(1)},${p(2)},${p(3)},${p(4)},${p(5)},${p(6)})`,
+      [id, data.patientId, data.studyDate || null,
+       data.description || null, data.modality || 'CR', 'active']
+    );
+
+    writeAuditLog({ action: 'CREATE', resource_type: 'study', resource_id: id });
+
+    return { id };
+  });
+
+  // ── imaging:importImage ────────────────────────────────────────────────────
+  // Copies the source file into the managed image store so the DB record always
+  // points to a file owned and backed up by the application.
+  //
+  // Storage layout:  <imageStore>/<patientId>/<studyId>/<uuid>.<ext>
+  //
+  // HIPAA / UK GDPR notes:
+  //   - Files land in image_store_path (configured under Settings → Storage),
+  //     giving the practice full control over backup, encryption at rest, and
+  //     access permissions at the OS level.
+  //   - The original source file is left untouched.
+  //   - file_size is recorded for integrity monitoring.
+  //   - Every import is audit-logged as CREATE.
+  ipcMain.handle('imaging:importImage', async (event, studyId, sourcePath, meta = {}) => {
+    if (!dbReady()) throw new Error('Database not connected');
+
+    const p = db.ph;
+
+    // Validate source
+    const resolvedSrc = path.resolve(sourcePath);
+    if (!fs.existsSync(resolvedSrc)) {
+      throw new Error(`Source file not found: ${resolvedSrc}`);
+    }
+
+    // Look up patient_id so we can organise the destination folder
+    const { rows: studyRows } = await db.query(
+      `SELECT id, patient_id FROM imaging_studies WHERE id = ${p(1)}`, [studyId]
+    );
+    if (!studyRows.length) throw new Error('Study not found: ' + studyId);
+    const patientId = studyRows[0].patient_id;
+
+    // Build destination:  <store>/<patientId>/<studyId>/<uuid><ext>
+    const storeRoot = _imageStoreRoot();
+    const destDir   = path.join(storeRoot, patientId, studyId);
+    fs.mkdirSync(destDir, { recursive: true });
+
+    const ext      = path.extname(resolvedSrc).toLowerCase() || '.dat';
+    const instId   = uuidv4();
+    const destPath = path.join(destDir, `${instId}${ext}`);
+
+    // Copy with COPYFILE_EXCL — never silently overwrite
+    fs.copyFileSync(resolvedSrc, destPath, fs.constants.COPYFILE_EXCL);
+
+    const stat = fs.statSync(destPath);
+
+    // First image in the study becomes the primary
+    const { rows: countRows } = await db.query(
+      `SELECT COUNT(*) AS cnt FROM imaging_instances WHERE study_id = ${p(1)}`, [studyId]
+    );
+    const isPrimary = meta.isPrimary !== undefined
+      ? (meta.isPrimary ? 1 : 0)
+      : (parseInt(countRows[0].cnt, 10) === 0 ? 1 : 0);
+
+    await db.query(
+      `INSERT INTO imaging_instances
+         (id, study_id, file_path, file_size, image_type, acquisition_date, is_primary)
+       VALUES (${p(1)},${p(2)},${p(3)},${p(4)},${p(5)},${p(6)},${p(7)})`,
+      [instId, studyId, destPath, stat.size,
+       meta.imageType || null,
+       new Date().toISOString(),
+       isPrimary]
+    );
+
+    writeAuditLog({
+      action: 'CREATE', resource_type: 'imaging_instance', resource_id: instId,
+      details: JSON.stringify({ study_id: studyId, file: path.basename(destPath), size: stat.size }),
+    });
+
+    log.info(`Image imported: ${resolvedSrc} → ${destPath}`);
+    return { id: instId, filePath: destPath };
+  });
+
+  // ── imaging:deleteInstance ────────────────────────────────────────────────
+  // Permanently removes a single image: deletes the physical file then the DB
+  // row. Audit-logged as DELETE. If the deleted image was the primary, the
+  // next oldest remaining image is promoted automatically.
+  ipcMain.handle('imaging:deleteInstance', async (event, instanceId) => {
+    if (!dbReady()) throw new Error('Database not connected');
+
+    const p = db.ph;
+
+    const { rows } = await db.query(
+      `SELECT id, study_id, file_path, thumbnail_path, is_primary
+       FROM imaging_instances WHERE id = ${p(1)}`, [instanceId]
+    );
+    if (!rows.length) throw new Error('Instance not found: ' + instanceId);
+    const inst = rows[0];
+
+    // Remove physical files — log but do not throw if file is already missing
+    for (const fp of [inst.file_path, inst.thumbnail_path].filter(Boolean)) {
+      try {
+        if (fs.existsSync(fp)) fs.unlinkSync(fp);
+      } catch (err) {
+        log.warn(`Could not delete file ${fp}:`, err.message);
+      }
+    }
+
+    await db.query(`DELETE FROM imaging_instances WHERE id = ${p(1)}`, [instanceId]);
+
+    // Promote a new primary if needed
+    if (inst.is_primary) {
+      await db.query(
+        `UPDATE imaging_instances SET is_primary = true
+         WHERE id = (
+           SELECT id FROM imaging_instances
+           WHERE study_id = ${p(1)}
+           ORDER BY created_at
+           LIMIT 1
+         )`,
+        [inst.study_id]
+      );
+    }
+
+    writeAuditLog({
+      action: 'DELETE', resource_type: 'imaging_instance', resource_id: instanceId,
+      details: JSON.stringify({ study_id: inst.study_id, file: inst.file_path }),
+    });
+
+    log.info(`Instance deleted: ${instanceId} (${inst.file_path})`);
+    return { success: true };
+  });
+
+  // ── imaging:deleteStudy ───────────────────────────────────────────────────
+  // Soft-deletes the study (status = 'deleted') and permanently removes all
+  // physical files and imaging_instances rows.
+  ipcMain.handle('imaging:deleteStudy', async (event, studyId) => {
+    if (!dbReady()) throw new Error('Database not connected');
+
+    const p = db.ph;
+
+    const { rows: instances } = await db.query(
+      `SELECT id, file_path, thumbnail_path FROM imaging_instances WHERE study_id = ${p(1)}`,
+      [studyId]
+    );
+
+    for (const inst of instances) {
+      for (const fp of [inst.file_path, inst.thumbnail_path].filter(Boolean)) {
+        try {
+          if (fs.existsSync(fp)) fs.unlinkSync(fp);
+        } catch (err) {
+          log.warn(`Could not delete file ${fp}:`, err.message);
+        }
+      }
+      writeAuditLog({
+        action: 'DELETE', resource_type: 'imaging_instance', resource_id: inst.id,
+        details: JSON.stringify({ study_id: studyId, file: inst.file_path, reason: 'study deleted' }),
+      });
+    }
+
+    await db.query(`DELETE FROM imaging_instances WHERE study_id = ${p(1)}`, [studyId]);
+    await db.query(
+      `UPDATE imaging_studies SET status = ${p(1)}, updated_at = NOW() WHERE id = ${p(2)}`,
+      ['deleted', studyId]
+    );
+
+    writeAuditLog({
+      action: 'DELETE', resource_type: 'study', resource_id: studyId,
+      details: JSON.stringify({ instance_count: instances.length }),
+    });
+
+    log.info(`Study deleted: ${studyId} (${instances.length} images removed)`);
+    return { success: true };
+  });
+
+  ipcMain.handle('imaging:saveAnnotations', async (event, instanceId, annotations) => {
+    if (!dbReady()) return;
+    const p = db.ph;
+    await db.query(
+      `UPDATE imaging_instances SET annotations = ${p(1)} WHERE id = ${p(2)}`,
+      [JSON.stringify(annotations), instanceId]
+    );
+    writeAuditLog({ action: 'UPDATE', resource_type: 'imaging_instance', resource_id: instanceId });
+  });
+
+  // ─── SETTINGS ─────────────────────────────────────────────────────────────
+
+  ipcMain.handle('settings:getAll', async () => {
+    if (!dbReady()) return {};
+    try {
+      const { rows } = await db.query('SELECT key, value FROM system_settings');
+      const out = {};
+      rows.forEach(r => { out[r.key] = r.value; });
+      return out;
+    } catch { return {}; }
+  });
+
+  ipcMain.handle('settings:get', async (event, key) => {
+    if (!dbReady()) return null;
+    try {
+      const { rows } = await db.query(
+        `SELECT value FROM system_settings WHERE key = ${db.ph(1)}`, [key]
+      );
+      return rows[0]?.value || null;
+    } catch { return null; }
+  });
+
+  ipcMain.handle('settings:set', async (event, key, value) => {
+    if (!dbReady()) return;
+    const p = db.ph;
+    await db.query(
+      `INSERT INTO system_settings (key, value) VALUES (${p(1)},${p(2)})
+       ON CONFLICT (key) DO UPDATE SET value = ${p(3)}, updated_at = NOW()`,
+      [key, value, value]
+    );
+    // Keep the image store path cached in electron-store for fast access
+    if (key === 'image_store_path') store?.set('imageStorePath', value);
+  });
+
+  // ─── DIALOGS ──────────────────────────────────────────────────────────────
+
+  ipcMain.handle('dialog:openFile', async (event, opts) => {
+    return dialog.showOpenDialog(opts || {});
+  });
+
+  ipcMain.handle('dialog:saveFile', async (event, opts) => {
+    return dialog.showSaveDialog(opts || {});
+  });
+
+  ipcMain.handle('dialog:openDirectory', async (event, opts) => {
+    return dialog.showOpenDialog({ ...(opts || {}), properties: ['openDirectory'] });
+  });
+
+  ipcMain.handle('dialog:showMessage', async (event, opts) => {
+    return dialog.showMessageBox(opts || {});
+  });
+
+  // ─── LICENSE ──────────────────────────────────────────────────────────────
+
+  ipcMain.handle('license:getStatus', async () => {
+    return licenseManager?.getStatus() || { valid: false };
+  });
+
+  ipcMain.handle('license:activate', async (event, key) => {
+    return licenseManager?.activate(key) || { success: false, error: 'License manager unavailable' };
+  });
+
+  ipcMain.handle('license:deactivate', async () => {
+    return licenseManager?.deactivate() || { success: false };
+  });
+
+  ipcMain.handle('license:validate', async () => {
+    return licenseManager?.validate() || { valid: false };
   });
 
   // ─── AUDIT ────────────────────────────────────────────────────────────────
@@ -245,7 +597,7 @@ function setupIpcHandlers(ipcMain, { licenseManager, store, dialog, app, db, dbR
 
     const p = db.ph;
 
-    let sql = 'SELECT * FROM audit_log WHERE TRUE';
+    let sql    = 'SELECT * FROM audit_log WHERE TRUE';
     const params = [];
     let i = 1;
 
@@ -257,25 +609,77 @@ function setupIpcHandlers(ipcMain, { licenseManager, store, dialog, app, db, dbR
     sql += ' ORDER BY timestamp DESC LIMIT 1000';
 
     const { rows } = await db.query(sql, params);
-
     return serializeRows(rows);
+  });
+
+  ipcMain.handle('audit:exportLogs', async (event, outputPath) => {
+    if (!dbReady()) return { success: false, error: 'Database not connected' };
+    try {
+      const { rows } = await db.query('SELECT * FROM audit_log ORDER BY timestamp DESC');
+      const headers  = Object.keys(rows[0] || {}).join(',');
+      const csvRows  = rows.map(r =>
+        Object.values(r).map(v =>
+          v == null ? '' : `"${String(v).replace(/"/g, '""')}"`
+        ).join(',')
+      );
+      const csv = [headers, ...csvRows].join('\n');
+      const dest = outputPath || path.join(app.getPath('downloads'), `audit-log-${Date.now()}.csv`);
+      fs.writeFileSync(dest, csv, 'utf8');
+      return { success: true, path: dest };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
   });
 
   // ─── USERS ────────────────────────────────────────────────────────────────
 
   ipcMain.handle('users:getAll', async () => {
     if (!dbReady()) return [];
-
     const { rows } = await db.query(
       'SELECT id, username, first_name, last_name, email, role, is_active, last_login FROM users ORDER BY last_name, first_name'
     );
-
     return serializeRows(rows);
+  });
+
+  ipcMain.handle('users:create', async (event, data) => {
+    if (!dbReady()) throw new Error('Database not connected');
+    const p    = db.ph;
+    const id   = uuidv4();
+    const hash = await bcrypt.hash(data.password, 12);
+    await db.query(
+      `INSERT INTO users (id, username, password_hash, first_name, last_name, email, role)
+       VALUES (${p(1)},${p(2)},${p(3)},${p(4)},${p(5)},${p(6)},${p(7)})`,
+      [id, data.username, hash, data.firstName, data.lastName, data.email || null, data.role || 'readonly']
+    );
+    writeAuditLog({ action: 'CREATE', resource_type: 'user', resource_id: id });
+    return { id };
+  });
+
+  // ─── APP ──────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('app:getVersion', () => app.getVersion());
+
+  ipcMain.handle('app:getInstallType', () => {
+    // 'server' if a db-server.json was written by the NSIS installer
+    const serverJson = path.join(process.resourcesPath || '', 'db-server.json');
+    return fs.existsSync(serverJson) ? 'server' : 'client';
+  });
+
+  ipcMain.handle('app:quit', () => app.quit());
+
+  ipcMain.handle('app:installUpdate', () => {
+    const { autoUpdater } = require('electron-updater');
+    autoUpdater.quitAndInstall();
+  });
+
+  ipcMain.handle('app:openLogsDirectory', () => {
+    const { shell } = require('electron');
+    shell.openPath(path.join(app.getPath('userData'), 'logs'));
   });
 }
 
 
-// ─── HELPERS ────────────────────────────────────────────────────────────────
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 function _active() {
   return true;
@@ -283,31 +687,12 @@ function _active() {
 
 async function _nextPatientNumber() {
   const db = require('./database');
-
   const { rows } = await db.query(
     'SELECT patient_number FROM patients ORDER BY created_at DESC LIMIT 1'
   );
-
   if (!rows.length) return 'P00001';
-
   const num = parseInt(rows[0].patient_number.replace(/\D/g, ''), 10) + 1;
-
   return `P${String(num).padStart(5, '0')}`;
-}
-
-async function _getSetting(key) {
-  const db = require('./database');
-
-  try {
-    const { rows } = await db.query(
-      `SELECT value FROM system_settings WHERE key=${db.ph(1)}`,
-      [key]
-    );
-
-    return rows[0]?.value || null;
-  } catch {
-    return null;
-  }
 }
 
 module.exports = { setupIpcHandlers };

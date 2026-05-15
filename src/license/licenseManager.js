@@ -122,8 +122,7 @@ class LicenseManager {
       });
 
       // Check expiry
-      const expiresAt = new Date(payload.exp * 1000);
-      if (expiresAt < new Date()) {
+      if (payload.exp && new Date(payload.exp * 1000) < new Date()) {
         return { valid: false, reason: 'token_expired' };
       }
 
