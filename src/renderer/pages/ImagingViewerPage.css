@@ -6,7 +6,7 @@
   background: var(--bg-base);
 }
 
-/* ── Topbar ─────────────────────────────────────────────────────────────── */
+/* ── Topbar ──────────────────────────────────────────────────────────────── */
 .viewer-topbar {
   display: flex;
   align-items: center;
@@ -36,76 +36,7 @@
 /* ── Body ────────────────────────────────────────────────────────────────── */
 .viewer-body { flex: 1; display: flex; overflow: hidden; }
 
-/* ── Thumbnail strip ─────────────────────────────────────────────────────── */
-.thumbnail-strip {
-  width: 88px;
-  min-width: 88px;
-  background: var(--bg-surface);
-  border-right: 1px solid var(--border);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 6px;
-}
-
-.thumbnail {
-  cursor: pointer;
-  border-radius: var(--radius);
-  border: 2px solid transparent;
-  overflow: hidden;
-  transition: border-color 0.1s;
-  flex-shrink: 0;
-}
-.thumbnail:hover  { border-color: var(--border-focus); }
-.thumbnail.active { border-color: var(--accent); }
-
-.thumbnail-preview {
-  aspect-ratio: 1;
-  background: #000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-.thumbnail-preview img { width: 100%; height: 100%; object-fit: cover; filter: brightness(0.9); }
-.thumbnail-placeholder { font-size: 22px; opacity: 0.3; }
-
-.thumbnail-label {
-  display: block;
-  text-align: center;
-  font-size: 9px;
-  color: var(--text-muted);
-  padding: 2px 2px 1px;
-  text-transform: capitalize;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.thumbnail-tooth {
-  display: block;
-  text-align: center;
-  font-size: 9px;
-  color: var(--accent);
-  font-weight: 700;
-  padding-bottom: 3px;
-}
-.thumbnail-empty { padding: 10px 4px; text-align: center; }
-.thumbnail-add {
-  width: 100%;
-  aspect-ratio: 1;
-  background: var(--bg-elevated);
-  border: 2px dashed var(--border);
-  border-radius: var(--radius);
-  color: var(--text-muted);
-  font-size: 20px;
-  cursor: pointer;
-  transition: all 0.1s;
-  flex-shrink: 0;
-}
-.thumbnail-add:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
-
-/* ── Main viewer canvas ──────────────────────────────────────────────────── */
+/* ── Main viewer area ────────────────────────────────────────────────────── */
 .viewer-main {
   flex: 1;
   position: relative;
@@ -116,41 +47,104 @@
   justify-content: center;
 }
 
-/* Cornerstone renders into this element — must fill parent entirely */
+/* ── Pane grid — fills viewer-main entirely ──────────────────────────────── */
+.pane-grid {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  gap: 2px;
+  background: #111; /* gap colour */
+}
+
+/* ── Single viewer pane ──────────────────────────────────────────────────── */
+.viewer-pane {
+  position: relative;
+  overflow: hidden;
+  background: #000;
+  cursor: crosshair;
+}
+
+/* Blue border on active pane when multiple panes are open */
+.viewer-pane.active .pane-active-indicator {
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--accent);
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Cornerstone renders into this — must fill pane entirely */
 .viewer-canvas {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  cursor: crosshair;
 }
 
-.viewer-empty {
+/* Loading / error state centred in pane */
+.pane-state {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 10px;
   color: var(--text-secondary);
+  font-size: 13px;
 }
 
-.viewer-image-loading {
+/* Per-pane action buttons (save / delete) shown on active pane */
+.pane-actions {
   position: absolute;
-  top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0,0,0,0.65);
+  bottom: 10px;
+  right: 10px;
+  display: flex;
+  gap: 4px;
+  z-index: 15;
+}
+.pane-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: var(--radius-sm);
   color: rgba(255,255,255,0.8);
-  font-size: 12px;
-  padding: 5px 14px;
-  border-radius: 20px;
-  pointer-events: none;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.pane-btn:hover { background: rgba(0,0,0,0.8); color: #fff; }
+
+/* Delete confirmation overlay inside a pane */
+.pane-confirm-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   z-index: 20;
 }
+.pane-confirm-box {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 260px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-primary);
+}
 
-/* ── DICOM overlays (clinical standard layout) ───────────────────────────── */
+/* ── DICOM overlays ──────────────────────────────────────────────────────── */
 .overlay-tl,
 .overlay-tr,
 .overlay-bl,
